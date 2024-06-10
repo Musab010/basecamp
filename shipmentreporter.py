@@ -1,11 +1,9 @@
+import sqlite3
 import csv
-import os
-import sys
+from datetime import date
 from vessel import Vessel
 from port import Port
 from shipment import Shipment
-from datetime import date
-import sqlite3
 
 DATABASE_PATH = "shipments.db"
 
@@ -14,29 +12,20 @@ class Reporter:
         self.conn = sqlite3.connect(DATABASE_PATH)
         self.cursor = self.conn.cursor()
 
-    # How many vessels are there? -> int
     def total_amount_of_vessels(self) -> int:
-        """
-        Retourneer het totale aantal schepen in de database.
-        """
+        """Return the total number of vessels in the database."""
         self.cursor.execute("SELECT COUNT(*) FROM vessels")
         result = self.cursor.fetchone()
         return result[0] if result else 0
 
-    # What is the longest shipment distance? -> Shipment
     def longest_shipment(self) -> Shipment:
-        """
-        Retourneer de zending met de langste afstand.
-        """
+        """Find and return the shipment with the longest distance."""
         self.cursor.execute("SELECT * FROM shipments ORDER BY distance_naut DESC LIMIT 1")
         shipment_data = self.cursor.fetchone()
         return Shipment(*shipment_data) if shipment_data else None
 
-    # What is the longest and shortest vessel? -> tuple[Vessel, Vessel]
     def longest_and_shortest_vessels(self) -> "tuple[Vessel, Vessel]":
-        """
-        Retourneer het langste en het kortste schip.
-        """
+        """Return the longest and shortest vessels by length."""
         self.cursor.execute("SELECT * FROM vessels ORDER BY length DESC LIMIT 1")
         longest_vessel_data = self.cursor.fetchone()
         
@@ -48,11 +37,8 @@ class Reporter:
 
         return (longest_vessel, shortest_vessel)
 
-    # What is the widest and smallest vessel? -> tuple[Vessel, Vessel]
     def widest_and_smallest_vessels(self) -> "tuple[Vessel, Vessel]":
-        """
-        Retourneer het breedste en het kleinste (qua breedte) schip.
-        """
+        """Return the widest and smallest vessels by beam."""
         self.cursor.execute("SELECT * FROM vessels ORDER BY beam DESC LIMIT 1")
         widest_vessel_data = self.cursor.fetchone()
         
@@ -64,11 +50,8 @@ class Reporter:
 
         return (widest_vessel, smallest_vessel)
 
-    # Which vessels have the most shipments -> tuple[Vessel, ...]
     def vessels_with_the_most_shipments(self) -> "tuple[Vessel, ...]":
-        """
-        Retourneer de schepen met de meeste zendingen.
-        """
+        """Find and return the vessels with the most shipments."""
         self.cursor.execute("""
             SELECT vessel, COUNT(*) as shipment_count
             FROM shipments
@@ -85,11 +68,8 @@ class Reporter:
         
         return tuple(vessels)
 
-    # Which ports have the most shipments -> tuple[Port, ...]
     def ports_with_most_shipments(self) -> "tuple[Port, ...]":
-        """
-        Retourneer de havens met de meeste zendingen.
-        """
+        """Return the ports with the most shipments."""
         self.cursor.execute("""
             SELECT origin, COUNT(*) as shipment_count
             FROM shipments
@@ -106,12 +86,8 @@ class Reporter:
         
         return tuple(ports)
 
-    # Which ports (origin) had the first shipment? -> tuple[Port, ...]:
-    # Which ports (origin) had the first shipment of a specific vessel type?  -> tuple[Port, ...]:
     def ports_with_first_shipment(self, vessel_type: str = None) -> "tuple[Port, ...]":
-        """
-        Retourneer de havens met de eerste zending. Optioneel filteren op scheepstype.
-        """
+        """Return the ports with the first shipment, optionally filtered by vessel type."""
         if vessel_type:
             self.cursor.execute("""
                 SELECT origin, MIN(date)
@@ -139,12 +115,8 @@ class Reporter:
         
         return tuple(ports)
 
-    # Which ports (origin) had the latest shipment? -> tuple[Port, ...]:
-    # Which ports (origin) had the latetst shipment of a specific vessel type? -> tuple[Port, ...]:
     def ports_with_latest_shipment(self, vessel_type: str = None) -> "tuple[Port, ...]":
-        """
-        Retourneer de havens met de laatste zending. Optioneel filteren op scheepstype.
-        """
+        """Return the ports with the latest shipment, optionally filtered by vessel type."""
         if vessel_type:
             self.cursor.execute("""
                 SELECT origin, MAX(date)
@@ -175,17 +147,8 @@ class Reporter:
 
         return tuple(ports)
 
-    # Which vessels have docked port Z between period X and Y? -> tuple[Vessel, ...]
-    # Based on given parameter `to_csv = True` should generate CSV file as  `Vessels docking Port Z between X and Y.csv`
-    # example: `Vessels docking Port MZPOL between 2023-03-01 and 2023-06-01.csv`
-    # date input always in format: YYYY-MM-DD
-    # otherwise it should just return the value as tuple(Vessels, ...)
-    # CSV example (this are also the headers):
-    #   imo, mmsi, name, country, type, build, gross, netto, length, beam
     def vessels_that_docked_port_between(self, port: Port, start: date, end: date, to_csv: bool = False) -> "tuple[Vessel, ...]":
-        """
-        Retourneer de schepen die tussen de gegeven data in een specifieke haven hebben aangemeerd. Optioneel een CSV-bestand genereren.
-        """
+        """Find vessels that docked at a specific port between two dates and optionally export to CSV."""
         start_date = start.strftime("%Y-%m-%d")
         end_date = end.strftime("%Y-%m-%d")
 
@@ -202,82 +165,53 @@ class Reporter:
 
         if to_csv:
             csv_filename = f"Vessels docking Port {port.id} between {start_date} and {end_date}.csv"
-            with open(csv_filename, 'w', newline='') as csvfile:
-                fieldnames = ["imo", "mmsi", "name", "country", "type", "build", "gross", "netto", "length", "beam"]
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writeheader()
-                for vessel in vessels_data:
-                    writer.writerow(dict(zip(fieldnames, vessel)))
+            self.export_to_csv(vessels_data, csv_filename, ["imo", "mmsi", "name", "country", "type", "build", "gross", "netto", "length", "beam"])
             return tuple()
 
         return tuple(Vessel(*vessel) for vessel in vessels_data)
 
-    # Which ports are located in country X? ->tuple[Port, ...]
-    # Based on given parameter `to_csv = True` should generate CSV file as  `Ports in country X.csv`
-    # example: `Ports in country Norway.csv`
-    # otherwise it should just return the value as tuple(Port, ...)
-    # CSV example (this are also the headers):
-    #   id, code, name, city, province, country
     def ports_in_country(self, country: str, to_csv: bool = False) -> "tuple[Port, ...]":
-        """
-        Retourneer de havens die zich in een specifiek land bevinden. Optioneel een CSV-bestand genereren.
-        """
+        """Find ports located in a specific country and optionally export to CSV."""
         self.cursor.execute("SELECT * FROM ports WHERE country = ? ORDER BY id", (country,))
         ports_data = self.cursor.fetchall()
 
         if to_csv:
             csv_filename = f"Ports in country {country}.csv"
-            with open(csv_filename, 'w', newline='') as csvfile:
-                fieldnames = ["id", "code", "name", "city", "province", "country"]
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writeheader()
-                for port in ports_data:
-                    writer.writerow(dict(zip(fieldnames, port)))
+            self.export_to_csv(ports_data, csv_filename, ["id", "code", "name", "city", "province", "country"])
             return tuple()
 
         return tuple(Port(*port) for port in ports_data)
 
-    # Which vessels are from country X? -> tuple[Vessel, ...]
-    # Based on given parameter `to_csv = True` should generate CSV file as  `Vessels from country X.csv`
-    # example: `Vessels from country GER.csv`
-    # otherwise it should just return the value as tuple(Vessel, ...)
-    # CSV example (this are also the headers):
-    #   imo, mmsi, name, country, type, build, gross, netto, length, beam
     def vessels_from_country(self, country: str, to_csv: bool = False) -> "tuple[Vessel, ...]":
-        """
-        Retourneer de schepen die afkomstig zijn uit een specifiek land. Optioneel een CSV-bestand genereren.
-        """
+        """Find vessels from a specific country and optionally export to CSV."""
         self.cursor.execute("SELECT * FROM vessels WHERE country = ?", (country,))
         vessels_data = self.cursor.fetchall()
 
         if to_csv:
             csv_filename = f"Vessels from country {country}.csv"
-            with open(csv_filename, 'w', newline='') as csvfile:
-                fieldnames = ["imo", "mmsi", "name", "country", "type", "build", "gross", "netto", "length", "beam"]
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writeheader()
-                for vessel in vessels_data:
-                    writer.writerow(dict(zip(fieldnames, vessel)))
+            self.export_to_csv(vessels_data, csv_filename, ["imo", "mmsi", "name", "country", "type", "build", "gross", "netto", "length", "beam"])
             return tuple()
 
         return tuple(Vessel(*vessel) for vessel in vessels_data)
     
     def fetch_vessel_by_imo(self, imo: int):
-        """
-        Haal een schip op aan de hand van het IMO-nummer.
-        """
+        """Helper method to fetch vessel details by IMO number."""
         self.cursor.execute("SELECT * FROM vessels WHERE imo = ?", (imo,))
         return self.cursor.fetchone()
 
     def fetch_port_by_id(self, port_id: str):
-        """
-        Haal een haven op aan de hand van de ID.
-        """
+        """Helper method to fetch port details by ID."""
         self.cursor.execute("SELECT * FROM ports WHERE id = ?", (port_id,))
         return self.cursor.fetchone()
 
+    def export_to_csv(self, data: list, filename: str, fieldnames: list):
+        """Export data to a CSV file."""
+        with open(filename, 'w', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in data:
+                writer.writerow(dict(zip(fieldnames, row)))
+
     def __del__(self):
-        """
-        Sluit de databaseverbinding wanneer de Reporter-instantie wordt verwijderd.
-        """
+        """Ensure the database connection is closed."""
         self.conn.close()
